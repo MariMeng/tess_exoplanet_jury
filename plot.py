@@ -81,10 +81,6 @@ koi_fpp = pd.merge(koi_table, fpp_table, on="kepid", how="left")
 
 
 import lightkurve as lk
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import warnings
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
@@ -199,3 +195,86 @@ plt.savefig('bls_periodograma_ponto.png')
 similar_planets = koi_table[(koi_table["koi_prad"]>1) & (koi_table["koi_prad"]<2)]
 
 print(similar_planets[["kepoi_name", "koi_prad" ,"koi_period"]])
+
+fpp_table[fpp_table["kepid"] == 9388479]
+
+toi_table[toi_table["ra"].round(2) == koi_sample["ra"].round(2)]
+
+
+
+import seaborn as sns
+
+plt.figure(figsize=(10, 5))
+sns.histplot(similar_planets["koi_period"], bins=30, kde=True)
+plt.xlabel("Orbital Period (days)")
+plt.ylabel("Number of Planets")
+plt.title("Distribution of Orbital Periods for Super-Earths (1-2 R⊕)")
+plt.show()
+
+high_fpp_planets = fpp_table[fpp_table["fpp_prob"] > 0.1]
+print(high_fpp_planets[["kepoi_name", "fpp_koi_period", "fpp_prad", "fpp_prob"]])
+
+
+similar_tess_planets = toi_table[(toi_table["st_rad"] > 1) & (toi_table["st_rad"] < 2)]
+print(similar_tess_planets[["toi", "ra", "dec", "st_rad", "st_logg"]])
+
+
+features = ["koi_period", "koi_time0bk", "koi_impact", "koi_duration", "koi_depth", "koi_prad", "koi_teq", "koi_model_snr", "koi_steff", "koi_slogg", "koi_srad"]
+
+df_train = koi_table[koi_table["koi_disposition"].isin(["CONFIRMED", "FALSE POSITIVE"])].copy()
+
+for col in features:
+    df_train[col] = pd.to_numeric(df_train[col], errors='coerce')
+
+df_train = df_train.dropna(subset=features)
+
+
+X = df_train[features]
+y = df_train["koi_disposition"].apply(lambda x: 1 if x == "CONFIRMED" else 0) # 1 para Planeta, 0 para Falso
+
+print("Dados prontos para o Random Forest!")
+print(f"Tamanho do Treino: {X.shape}")
+
+
+from sklearn.model_selection import train_test_split, KFold, cross_val_score
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import classification_report, confusion_matrix, recall_score
+
+clf = RandomForestClassifier(n_estimators=100)
+
+
+kf = KFold(n_splits=2, shuffle=True, random_state=42)
+    
+
+
+notas_recall = cross_val_score(clf, X, y, cv=kf, scoring='recall')
+    
+notas_precision = cross_val_score(clf, X, y, cv=kf, scoring='precision')
+
+
+print("\n" + "="*40)
+print("RESULTADOS DO K-FOLD (5 PARTES)")
+print("="*40)
+    
+print(f"Notas de Recall nas 5 provas: \n{notas_recall}")
+print(f"\n-> MÉDIA DE RECALL: {np.mean(notas_recall):.2%}")
+print(f"-> Estabilidade (Desvio Padrão): +/- {np.std(notas_recall):.2%}")
+    
+print("-" * 40)
+print(f"Média de Precisão: {np.mean(notas_precision):.2%}")
+print("="*40)
+
+plt.figure(figsize=(8, 5))
+data_to_plot = pd.DataFrame({
+    'Recall (Não perder planetas)': notas_recall, 
+    'Precision (Não dar alarme falso)': notas_precision
+})
+    
+sns.boxplot(data=data_to_plot, palette="Set3")
+plt.title("Estabilidade do Modelo: K-Fold (5 splits)")
+plt.ylabel("Pontuação (0 a 1)")
+plt.grid(True, alpha=0.3)
+plt.savefig('estabilidade.png')
+
+
+
