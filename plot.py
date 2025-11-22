@@ -232,18 +232,18 @@ df_train = df_train.dropna(subset=features)
 X = df_train[features]
 y = df_train["koi_disposition"].apply(lambda x: 1 if x == "CONFIRMED" else 0) # 1 para Planeta, 0 para Falso
 
-print("Dados prontos para o Random Forest!")
+print("Dados prontos para o Random Forest")
 print(f"Tamanho do Treino: {X.shape}")
 
 
 from sklearn.model_selection import train_test_split, KFold, cross_val_score
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import RandomForestClassifier, IsolationForest
 from sklearn.metrics import classification_report, confusion_matrix, recall_score
 
 clf = RandomForestClassifier(n_estimators=100)
 
 
-kf = KFold(n_splits=2, shuffle=True, random_state=42)
+kf = KFold(n_splits=5, shuffle=True, random_state=42)
     
 
 
@@ -276,5 +276,86 @@ plt.ylabel("Pontuação (0 a 1)")
 plt.grid(True, alpha=0.3)
 plt.savefig('estabilidade.png')
 
+
+clf_final = RandomForestClassifier(n_estimators=100)
+clf_final.fit(X,y)
+
+df_candidatos = koi_table[koi_table["koi_disposition"].str.strip() == "CANDIDATE"]
+
+for col in features:
+    df_candidatos[col] = pd.to_numeric(df_candidatos[col], errors='coerce')
+
+
+df_candidatos = df_candidatos.dropna(subset=features)
+
+X_candidatos = df_candidatos[features]
+
+print(f"{len(X_candidatos)} candidatos")
+
+
+
+probabilidades = clf_final.predict_proba(X_candidatos)
+
+df_candidatos["chance_de_positivo"] = probabilidades[:,1]
+
+descobertas = df_candidatos.sort_values(by="chance_de_positivo",  ascending=False)
+
+colunas_exibicao = ["kepoi_name", "chance_de_positivo", "koi_period", "koi_prad", "koi_steff"]
+print(descobertas[colunas_exibicao].head(10).to_string(index=False))
+
+
+descobertas.to_csv("sinalizacoes_exoplanetas.csv", index=False)
+print("Lista salva")
+
+
+
+
+##anomalias code
+
+
+iso_forest = IsolationForest(contamination=0.02, random_state=42)
+
+iso_forest.fit(X)
+
+anomalias = iso_forest.predict(X) #1 = normal, -1 = anomalia
+
+scores = iso_forest.decision_function(X)
+
+df_anomalias = df_train.copy()
+
+df_anomalias['anomalia'] = anomalias
+
+df_anomalias['grau_de_anomalia'] = scores
+
+suspeitos_anoma = df_anomalias[df_anomalias['anomalia'] == -1]
+
+suspeitos_anoma = suspeitos_anoma.sort_values(by='grau_de_anomalia')
+
+
+cols_to_show = ['kepoi_name', 'koi_disposition', 'koi_period', 'koi_prad', 'grau_de_anomalia']
+print(suspeitos_anoma[cols_to_show].head(10))
+
+suspeitos_anoma.to_csv("exoplanetas_anomalos.csv", index=False)
+
+
+plt.figure(figsize=(12, 6))
+
+plt.scatter(df_anomalias[df_anomalias['anomalia'] == 1]['koi_period'], 
+            df_anomalias[df_anomalias['anomalia'] == 1]['koi_prad'], 
+            c='blue', s=10, alpha=0.3, label='Normal')
+
+plt.scatter(suspeitos_anoma['koi_period'], 
+            suspeitos_anoma['koi_prad'], 
+            c='red', s=50, marker='x', label='Anomalia')
+
+plt.xscale('log') # Escala logarítmica ajuda a ver melhor dados astronomicos
+plt.yscale('log')
+plt.xlabel('Período Orbital (Dias)')
+plt.ylabel('Raio do Planeta (Raios Terrestres)')
+plt.title('Anomalias detectadas pelo Isolation Forest')
+plt.legend()
+plt.show()
+
+plt.savefig('estranhos.png')
 
 
